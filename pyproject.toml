@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+
+[tool.black]
+preview = true
+fast = true
+line-length = 100
+target-version = ["py311", "py312", "py313"]
+
+[tool.isort]
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+line_length = 100
+profile = "black"
+
+[tool.ruff]
+line-length = 100
+
+
+[tool.ruff.lint]
+ignore = [
+    #  "F401", # Ignore "... unused" errors
+    "F841", # Ignore "... unused" errors
+]
+
+
+[tool.pylint.main]
+limit-inference-results = 20
+py-version = "3.13"
+suggestion-mode = true
+init-hook = """
+import sys
+sys.path.append("/opt/homebrew/lib/python3.13/site-packages")
+try: import pylint_venv
+except ImportError: pass
+else: pylint_venv.inithook(quiet=True, force_venv_activation=True)
+"""
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint.messages_control]
+disable = [
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "broad-exception-caught",
+    "logging-fstring-interpolation",
+    "fixme",
+    "too-many-lines",
+    "unused-argument",
+]
+
+
+[tool.flake8]
+ignore = "E226,E302,E41"
+max-line-length = 100
+exclude = "scripts"
+max-complexity = 13
+
+
+[project]
+name = "Buratino"
+version = "0.1.0"
+description = "Lovely Spam! Wonderful Spam!"
+readme = "README.md"
+
+requires-python = ">= 3.12"
+
+dependencies = ["awesome-slugify"]
+
+[project.optional-dependencies]
+dev = ["requests"]

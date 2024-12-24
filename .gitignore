@@ -1,0 +1,33 @@
+# Local files
+/psd/
+/log/
+/tmp/
+/www/
+/src/audio_log/
+/secrets/
+*_local.*
+*.sqlite3
+*.pyc
+*.rdb
+celerybeat-schedule
+# File system caches
+.DS_Store
+._*
+
+# IDE system files
+.ropeproject
+.vim
+.idea
+.tags
+.vscode
+.env
+.venv
+*.sublime-workspace
+*.sublime-project
+*.code-workspace
+
+# Temporary files
+*.py[oc]
+*.sw[opn]
+*~
+
