@@ -13,12 +13,11 @@ from silero_vad import load_silero_vad
 
 from coordinator import Coordinator
 from event_bus import EventBus
-from tracks.tts_openai import TTSTrack
 from workers.event_tracer import EventTracer
 from workers.llm import LLMWorker
 from workers.stt import STTWorker
 from workers.tts import TTSWorker
-from workers.vad2 import VADWorker
+from workers.vad import VADWorker
 
 vad_model = load_silero_vad(onnx=True)
 
@@ -32,6 +31,8 @@ logger = logging.getLogger("pc")
 logger.setLevel(logging.INFO)
 
 logging.getLogger("aioice.ice").setLevel(logging.WARNING)
+logging.getLogger("aiortc").setLevel(logging.INFO)
+logging.getLogger("websockets.client").setLevel(logging.INFO)
 
 pcs = set()
 
@@ -59,24 +60,25 @@ async def offer(request):
 
     # Main event bus
     event_bus = EventBus()
-
-    stt = STTWorker(event_bus)
-
-    llm = LLMWorker(event_bus)
-    await llm.start()
+    await event_bus.start()
 
     vad = VADWorker(event_bus)
     await vad.start()
 
-    # tts = TTSWorker(event_bus)
-    # await tts.start()
+    stt = STTWorker(event_bus)
+    await stt.start()
+
+    llm = LLMWorker(event_bus)
+    await llm.start()
+
+    tts = TTSWorker(event_bus)
+    await tts.start()
 
     event_tracer = EventTracer(event_bus)
     await event_tracer.start()
 
-    tts_track = TTSTrack()
-
-    coordinator = Coordinator(event_bus, tts_track)
+    coordinator = Coordinator(event_bus)
+    await coordinator.start()
 
     if args.save:
         recorder = MediaRecorder(args.save)
@@ -103,24 +105,30 @@ async def offer(request):
                 # Проброс всех других сообщений в EventBus
                 await event_bus.publish({"type": "rtc_message", "payload": message})
 
-            # if isinstance(message, str) and message.startswith("speak"):
-            #     await tts_track.say("Hello. How can I help you today?")
-            #     channel.send("play")
-
     @pc.on("track")
     def on_track(track):
         log_info(f"Track received, kind={track.kind}")
 
-        if track.kind == "audio":
-            # NOTE: subscribe to audio data
-            pc.addTrack(tts_track.getTrack())
-            proxy_track = relay.subscribe(track)
-            vad_track = vad.create_vad_track(proxy_track)
-            recorder.addTrack(vad_track)
+        if track.kind != "audio":
+            return
+
+        # TODO: попробовать один канал отправлять туда и сюда (можно resampled)
+        # например, stt можно подписать на трек, который возвращает VAD
+
+        proxy_track = relay.subscribe(track)
+        vad_track = vad.create_track(proxy_track)
+        recorder.addTrack(vad_track)
+
+        proxy_track = relay.subscribe(track)
+        stt_track = stt.create_track(proxy_track)
+        recorder.addTrack(stt_track)
+
+        pc.addTrack(tts.ttsTrack)
 
         @track.on("ended")
         async def on_ended():
             log_info("Track %s ended", track.kind)
+            await stt.stop()
             await recorder.stop()
             vad_model.reset_states()
 
@@ -172,4 +180,6 @@ if __name__ == "__main__":
     app.router.add_get("/", index)
     app.router.add_get("/client.js", javascript)
     app.router.add_post("/offer", offer)
-    web.run_app(app, access_log=None, host=args.host, port=args.port)
+
+    loop = asyncio.new_event_loop()
+    web.run_app(app, access_log=None, host=args.host, port=args.port, loop=loop)

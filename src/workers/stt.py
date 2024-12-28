@@ -10,8 +10,8 @@ from dotenv import load_dotenv
 from termcolor import colored
 
 from event_bus import EventBus
-
-from .base import BaseWorker
+from tracks.stt_track import STTTrack
+from workers.base import BaseWorker
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -47,9 +47,9 @@ class STTWorker(BaseWorker):
             vad_events=True,
             endpointing=300,
             ###
-            # encoding="linear16",
-            # channels=1,
-            # sample_rate=16000,
+            encoding="linear16",
+            channels=2,  # FIXME: make it mono
+            sample_rate=48000,
         )
 
         self.addons = {"no_delay": "true"}
@@ -105,12 +105,12 @@ class STTWorker(BaseWorker):
 
         return file_name
 
+    def create_track(self, track):
+        return STTTrack(track, self.on_voice_data)
+
     async def on_voice_data(self, data):
-        if not data:
-            return
-
-        self.audio_data += data
-
+        # self.audio_data += data
+        # av.audio.frame.AudioFrame
         try:
             await self.deepgram.send(data)
         except Exception as e:

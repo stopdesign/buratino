@@ -18,7 +18,7 @@ class BaseWorker(abc.ABC):
 
     async def run_forever(self):
         while self._running:
-            asyncio.sleep(1)
+            await asyncio.sleep(1)
 
     async def stop(self):
         self._running = False

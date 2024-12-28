@@ -9,9 +9,12 @@ logger = logging.getLogger("pc")
 logger.setLevel(logging.INFO)
 
 
-class VADInfoTrack(AudioStreamTrack):
-    kind = "audio"
+# One audio chunk (30+ ms) takes less than 1ms to be processed on a single CPU thread.
+# Using batching or GPU can also improve performance considerably.
+# Under certain conditions ONNX may even run up to 4-5x faster.
 
+
+class VADInfoTrack(AudioStreamTrack):
     def __init__(self, track, vad_model, callback):
         super().__init__()
         self.track = track
@@ -27,6 +30,7 @@ class VADInfoTrack(AudioStreamTrack):
 
         self.segments = []
         self.segments_amount = 80
+
         self.is_activated = False
         self.is_activated_threshhold = 5  # how many samples needed for activation
         self.is_activated_amount = 0
@@ -36,6 +40,7 @@ class VADInfoTrack(AudioStreamTrack):
 
         # Resample to 16k
         frame_16 = self.resampler.resample(frame)[0]
+        # Convert to float32
         frame_array = torch.tensor(frame_16.to_ndarray()[0], dtype=torch.float32) / 32_767
 
         self.buffer = torch.cat([self.buffer, frame_array])
