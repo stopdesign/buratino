@@ -9,8 +9,8 @@ from deepgram import LiveTranscriptionEvents as LTE
 from dotenv import load_dotenv
 from termcolor import colored
 
-from event_bus import EventBus
 from tracks.stt_track import STTTrack
+from utils.event_bus import EventBus
 from workers.base import BaseWorker
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ load_dotenv()
 
 DT = "%H:%M:%S.%f"
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
-AUDIO_LOG_PATH = os.path.join(os.path.dirname(__file__), "../audio_log/")
+AUDIO_LOG_PATH = os.path.join(os.path.dirname(__file__), "../../audio_log/")
 
 
 class STTWorker(BaseWorker):

@@ -17,12 +17,8 @@ document.getElementById("stop").disabled = true;
 function createPeerConnection() {
     var config = {
         sdpSemantics: "unified-plan",
+        iceServers: [{ urls: "stun:127.0.0.1:3478" }],
     };
-    const iceServers = [{ urls: "stun:127.0.0.1:3478" }];
-
-    if (document.getElementById("use-stun").checked) {
-        config.iceServers = iceServers;
-    }
 
     pc = new RTCPeerConnection(config);
 
@@ -54,11 +50,9 @@ function createPeerConnection() {
     );
     signalingLog.textContent = pc.signalingState;
 
-    // connect audio / video
+    // connect audio
     pc.addEventListener("track", (evt) => {
-        if (evt.track.kind == "video")
-            document.getElementById("video").srcObject = evt.streams[0];
-        else document.getElementById("audio").srcObject = evt.streams[0];
+        document.getElementById("audio").srcObject = evt.streams[0];
     });
 
     return pc;
@@ -82,10 +76,6 @@ function enumerateInputDevices() {
             populateSelect(
                 document.getElementById("audio-input"),
                 devices.filter((device) => device.kind == "audioinput"),
-            );
-            populateSelect(
-                document.getElementById("video-input"),
-                devices.filter((device) => device.kind == "videoinput"),
             );
         })
         .catch((e) => {
@@ -127,18 +117,11 @@ function negotiate() {
                 offer.sdp = sdpFilterCodec("audio", codec, offer.sdp);
             }
 
-            codec = document.getElementById("video-codec").value;
-            if (codec !== "default") {
-                offer.sdp = sdpFilterCodec("video", codec, offer.sdp);
-            }
-
             document.getElementById("offer-sdp").textContent = offer.sdp;
             return fetch("/offer", {
                 body: JSON.stringify({
                     sdp: offer.sdp,
                     type: offer.type,
-                    video_transform:
-                        document.getElementById("video-transform").value,
                 }),
                 headers: {
                     "Content-Type": "application/json",
@@ -229,32 +212,9 @@ function start() {
             : true;
     }
 
-    if (document.getElementById("use-video").checked) {
-        const videoConstraints = {};
-
-        const device = document.getElementById("video-input").value;
-        if (device) {
-            videoConstraints.deviceId = { exact: device };
-        }
-
-        const resolution = document.getElementById("video-resolution").value;
-        if (resolution) {
-            const dimensions = resolution.split("x");
-            videoConstraints.width = parseInt(dimensions[0], 0);
-            videoConstraints.height = parseInt(dimensions[1], 0);
-        }
-
-        constraints.video = Object.keys(videoConstraints).length
-            ? videoConstraints
-            : true;
-    }
-
     // Acquire media and start negociation.
 
-    if (constraints.audio || constraints.video) {
-        if (constraints.video) {
-            document.getElementById("media").style.display = "block";
-        }
+    if (constraints.audio) {
         navigator.mediaDevices.getUserMedia(constraints).then(
             (stream) => {
                 stream.getTracks().forEach((track) => {
@@ -290,7 +250,7 @@ function stop() {
             });
         }
 
-        // close local audio / video
+        // close local audio
         pc.getSenders().forEach((sender) => {
             if (sender.track) {
                 sender.track.stop();
@@ -318,7 +278,6 @@ function sdpFilterCodec(kind, codec, realSdp) {
     var allowed = [];
     var rtxRegex = new RegExp("a=fmtp:(\\d+) apt=(\\d+)\r$");
     var codecRegex = new RegExp("a=rtpmap:([0-9]+) " + escapeRegExp(codec));
-    var videoRegex = new RegExp("(m=" + kind + " .*?)( ([0-9]+))*\\s*$");
 
     var lines = realSdp.split("\n");
 
@@ -358,10 +317,6 @@ function sdpFilterCodec(kind, codec, realSdp) {
             var skipMatch = lines[i].match(skipRegex);
             if (skipMatch && !allowed.includes(parseInt(skipMatch[2]))) {
                 continue;
-            } else if (lines[i].match(videoRegex)) {
-                sdp +=
-                    lines[i].replace(videoRegex, "$1 " + allowed.join(" ")) +
-                    "\n";
             } else {
                 sdp += lines[i] + "\n";
             }

@@ -127,7 +127,7 @@ class Coordinator(BaseWorker):
         await self.emit("tts_request", {"text": text})
 
     async def _handle_llm_response_done(self, message):
-        logger.info("LLM DONE ++++++++++++++++++++ (just a marker)")
+        cprint(" LLM DONE ", attrs=["reverse"])
 
     async def _handle_abort(self, message):
         """Handle abort events from workers or other components."""

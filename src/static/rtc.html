@@ -70,6 +70,7 @@
     </head>
     <body>
         <h2>Options</h2>
+
         <div class="option">
             <input id="use-datachannel" checked="checked" type="checkbox" />
             <label for="use-datachannel">Use datachannel</label>
@@ -83,6 +84,7 @@
                 </option>
             </select>
         </div>
+
         <div class="option">
             <input id="use-audio" checked="checked" type="checkbox" />
             <label for="use-audio">Use audio</label>
@@ -96,35 +98,6 @@
                 <option value="PCMA/8000">PCMA</option>
             </select>
         </div>
-        <div class="option" style="display: none">
-            <input id="use-video" type="checkbox" />
-            <label for="use-video">Use video</label>
-            <select id="video-input">
-                <option value="" selected>Default device</option>
-            </select>
-            <select id="video-resolution">
-                <option value="" selected>Default resolution</option>
-                <option value="320x240">320x240</option>
-                <option value="640x480">640x480</option>
-                <option value="960x540">960x540</option>
-                <option value="1280x720">1280x720</option>
-            </select>
-            <select id="video-transform">
-                <option value="none" selected>No transform</option>
-                <option value="edges">Edge detection</option>
-                <option value="cartoon">Cartoon effect</option>
-                <option value="rotate">Rotate</option>
-            </select>
-            <select id="video-codec">
-                <option value="default" selected>Default codecs</option>
-                <option value="VP8/90000">VP8</option>
-                <option value="H264/90000">H264</option>
-            </select>
-        </div>
-        <div class="option">
-            <input id="use-stun" type="checkbox" checked />
-            <label for="use-stun">Use STUN server</label>
-        </div>
 
         <br />
         <button id="start" onclick="start()">Start</button>
@@ -132,6 +105,7 @@
         <button id="msg" onclick="msg()">MSG</button>
 
         <h2>State</h2>
+
         <p>ICE gathering state: <span id="ice-gathering-state"></span></p>
         <p>ICE connection state: <span id="ice-connection-state"></span></p>
         <p>Signaling state: <span id="signaling-state"></span></p>
@@ -139,7 +113,6 @@
         <div id="media" style="display: none">
             <h2>Media</h2>
             <audio id="audio" autoplay="true"></audio>
-            <video id="video" autoplay="true" playsinline="true"></video>
         </div>
 
         <h2>Data channel</h2>
@@ -155,6 +128,6 @@
             <pre id="answer-sdp"></pre>
         </div>
 
-        <script src="client.js"></script>
+        <script src="/client.js"></script>
     </body>
 </html>

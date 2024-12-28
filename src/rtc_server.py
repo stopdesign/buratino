@@ -12,7 +12,7 @@ from aiortc.contrib.media import MediaBlackhole, MediaRecorder, MediaRelay
 from silero_vad import load_silero_vad
 
 from coordinator import Coordinator
-from event_bus import EventBus
+from utils.event_bus import EventBus
 from workers.event_tracer import EventTracer
 from workers.llm import LLMWorker
 from workers.stt import STTWorker
