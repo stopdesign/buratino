@@ -1,12 +1,13 @@
 import asyncio
+import io
 import logging
 import os
 from datetime import datetime, timedelta
 
-from aiofiles import open as aio_open
 from deepgram import AsyncLiveClient, DeepgramClientOptions, LiveOptions
 from deepgram import LiveTranscriptionEvents as LTE
 from dotenv import load_dotenv
+from pydub import AudioSegment
 from termcolor import colored
 
 from tracks.stt_track import STTTrack
@@ -25,6 +26,20 @@ DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 AUDIO_LOG_PATH = os.path.join(os.path.dirname(__file__), "../../audio_log/")
 
 
+def stereo_to_mono(pcm_data: bytearray) -> bytes:
+    """
+    Convert stereo PCM audio (16-bit, 48kHz) to mono using pydub.
+    """
+    audio = AudioSegment.from_raw(
+        io.BytesIO(pcm_data),
+        sample_width=2,  # 16-bit audio = 2 bytes
+        frame_rate=48000,
+        channels=2,  # Stereo
+    )
+    mono_audio = audio.set_channels(1)
+    return mono_audio.raw_data
+
+
 class STTWorker(BaseWorker):
     def __init__(self, event_bus: EventBus) -> None:
         super().__init__(event_bus)
@@ -32,6 +47,8 @@ class STTWorker(BaseWorker):
         self.last_start = datetime.now()
         self.rel_start = 0.0
         self.audio_data = bytearray(b"")
+
+        self.event_types = ["stt_save"]
 
         # Configure live transcription options
         self.options = LiveOptions(
@@ -48,14 +65,14 @@ class STTWorker(BaseWorker):
             endpointing=300,
             ###
             encoding="linear16",
-            channels=2,  # FIXME: make it mono
+            channels=1,
             sample_rate=48000,
         )
 
         self.addons = {"no_delay": "true"}
 
         client_options = DeepgramClientOptions(
-            options={"keepalive": "true", "auto_flush_reply_delta": 1000},
+            options={"keepalive": "true"},
             api_key=DEEPGRAM_API_KEY,
             verbose=logging.FATAL,  # logging.NOTSET,
         )
@@ -77,31 +94,44 @@ class STTWorker(BaseWorker):
     async def stop(self):
         logger.error("Stopping STT...")
         await self.deepgram.finalize()
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.2)
         await self.deepgram.finish()
         await super().stop()
 
-    async def finalize(self):
-        logger.error("Finalize")
-        file_name = await self.save_audio(self.audio_data)
+    async def handle_custom_message(self, message):
+        match message["type"]:
+            case "stt_save":
+                if self.audio_data:
+                    await self.save()
+
+    async def save(self):
+        logger.error("Saving audio...")
+        file_name = self.save_audio(self.audio_data)
         await self.emit("audio_log_ready", {"file_name": file_name})
-        await self.deepgram.finalize()
+        # await self.deepgram.finalize()
         self.audio_data = bytearray(b"")
         self.is_finals = []
 
-    async def save_audio(self, data):
+    def save_audio(self, pcm_data):
         """
-        Save the raw audio data to a file
+        Save the raw audio data to a compressed file.
         """
         file_name = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         data_dir = os.path.abspath(AUDIO_LOG_PATH)
         if not os.path.exists(data_dir):
             os.makedirs(data_dir)
-        file_path = os.path.join(data_dir, f"{file_name}.webm")
+        file_path = os.path.join(data_dir, f"{file_name}.mp3")
 
-        async with aio_open(file_path, "wb") as f:
-            await f.write(data)
+        audio = AudioSegment.from_raw(
+            io.BytesIO(pcm_data),
+            sample_width=2,
+            frame_rate=48000,
+            channels=1,
+        )
+        audio.export(file_path, format="mp3", bitrate="160k")
+
+        logger.info(f"Saved audio duration: {audio.duration_seconds}")
 
         return file_name
 
@@ -109,19 +139,10 @@ class STTWorker(BaseWorker):
         return STTTrack(track, self.on_voice_data)
 
     async def on_voice_data(self, data):
-        # self.audio_data += data
-        # av.audio.frame.AudioFrame
-        try:
-            await self.deepgram.send(data)
-        except Exception as e:
-            logger.error(f"Error sending audio to Deepgram: {e}")
-
-    async def handle_custom_message(self, message):
-        # Handle specific messages sent to STTWorker
-        if message["type"] == "stt_command":
-            command = message["payload"].get("command", "")
-            if command == "stop":
-                await self.stop()
+        # takes 0.1-0.2 ms
+        data = stereo_to_mono(data)
+        self.audio_data += data
+        await self.deepgram.send(data)
 
     async def on_open(self, *args, **kwargs):
         logger.info("STT Connection Opened")

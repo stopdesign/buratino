@@ -269,8 +269,8 @@ function stop() {
 
 function msg() {
     if (dc && dc.readyState == "open") {
-        dataChannelLog.textContent += "speak!\n";
-        dc.send("speak");
+        dataChannelLog.textContent += "cmd: save_audio\n";
+        dc.send("save_audio");
     }
 }
 

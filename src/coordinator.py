@@ -67,8 +67,8 @@ class Coordinator(BaseWorker):
             case "abort_all":
                 await self._handle_abort(message)
             case "rtc_message":
-                if message.get("payload") == "speak":
-                    print("SPEAK (do nothing)")
+                if message.get("payload") == "save_audio":
+                    await self.emit("stt_save", {})
 
     async def _handle_vad_speech_detected(self, message=None):
         logger.info("VAD update")

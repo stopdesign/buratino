@@ -51,6 +51,8 @@ class TTSWorker(BaseWorker):
                 await self._handle_abort()
 
     async def _handle_abort(self):
+        if self.tts_queue.empty() and self.packetq.empty():
+            return
         logger.warning("Aborting TTS tasks.")
         async with self.lock:
             while not self.tts_queue.empty():
