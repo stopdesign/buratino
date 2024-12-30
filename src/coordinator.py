@@ -1,9 +1,9 @@
 import logging
-import uuid
+from time import monotonic
 
 from termcolor import cprint
 
-from chat import ChatContext  # ChatContent, ChatMessage
+from chat import ChatContext
 from workers.base import BaseWorker
 
 logger = logging.getLogger(__name__)
@@ -19,8 +19,8 @@ SP = (
     "imperfect and might misinterpret or autocorrect due to recognition errors or assumptions. "
     "7. Prioritize the context of the recognized sentence rather than detected "
     "spelling or grammar issues. "
-    # "8. If the phrase seems short and imcomplete or irrelevant, return [INCOMPLETE]. "
-    # "9. Ask When Uncertain. If unsure, ask clarifying questions like: 'Did you mean X?' "
+    "8. If the phrase seems short and imcomplete, return [INCOMPLETE]. "
+    "9. Ask When Uncertain. If unsure, ask clarifying questions like: 'Did you mean X?' "
     "IMPORTANT: always remember that you are a voice assistant with no visual interface. "
     "IMPORTANT: Avoid follow-up questions. Use laconic and concise language. "
 )
@@ -40,9 +40,19 @@ class Coordinator(BaseWorker):
             "abort_all",
             "on_speech_interim",
             "rtc_message",
+            "on_vad_data",
+            "on_vad_start",
+            "on_vad_end",
         ]
         self.chat = ChatContext()
         self.system_prompt = SP
+
+        self.last_stt_time: float = -1.0
+        self.last_vad_time: float = -1.0
+        self.silence_duration: float = 10.0
+        self.vad_active: bool = False
+
+        self.unhandled_text = ""
 
     async def start(self):
         await super().start()
@@ -50,12 +60,12 @@ class Coordinator(BaseWorker):
 
     async def handle_custom_message(self, message):
         match message["type"]:
-            case "vad_speech_detected":
-                await self._handle_vad_speech_detected()
-            case "vad_speech_update":
-                await self._handle_vad_update()
-            case "speech_started":
-                await self._handle_speech_started(message)
+            case "on_vad_start":
+                await self._handle_vad_start()
+            case "on_vad_end":
+                await self._handle_vad_end()
+            case "on_vad_data":
+                await self._handle_vad_data()
             case "on_speech_interim":
                 await self._handle_speech_interim(message)
             case "on_speech_final" | "on_utterance_end":
@@ -70,22 +80,39 @@ class Coordinator(BaseWorker):
                 if message.get("payload") == "save_audio":
                     await self.emit("stt_save", {})
 
-    async def _handle_vad_speech_detected(self, message=None):
-        logger.info("VAD update")
+    async def _handle_vad_start(self, message=None):
+        self.vad_active = True
 
-    async def _handle_vad_update(self, message=None):
-        logger.info("VAD update")
+    async def _handle_vad_end(self, message=None):
+        self.vad_active = False
 
-    async def _handle_speech_started(self, message):
-        pass
+    async def _handle_vad_data(self, message=None):
+        """
+        Здесь принимается решение о запуске хода компьютера.
+
+        Условия:
+        - сейчас не говорят
+        - есть накопленный текст
+        - от текста зависит необходимая длина паузы
+        """
+        if self.vad_active:
+            self.last_vad_time = monotonic()
+            self.silence_duration = 0
+        else:
+            self.silence_duration = monotonic() - self.last_vad_time
+
+        if self.unhandled_text and self.silence_duration > 1.0:
+            cprint(f"  {self.unhandled_text} ", "cyan", attrs=["reverse"])
+
+            self.chat.append(text=self.unhandled_text, role="user")
+            self.unhandled_text = ""
+
+            await self.emit("tts_abort", {})
+            await self.emit("llm_request", self.chat.messages)
 
     async def _handle_speech_interim(self, message):
         text = message["payload"]["text"]
         confidence = float(message["payload"].get("confidence", 0))
-
-        # TODO:
-        # - should interrupt?
-        # - should mute the voice and wait? (pause TTS, don't stop LLM)
 
         if text and confidence > 0.8:
             logger.error("TTS interruption by interim speech")
@@ -95,23 +122,8 @@ class Coordinator(BaseWorker):
         """
         Handle finalized speech events.
         """
-        confidence = message["payload"].get("confidence")
-        text = message["payload"]["text"]
-
-        # WARN:
-        # - should_interrupt? YES, ALWAIS
-        # - if yes, create LLM task (replace the current one, if any)
-        # - update chat context witn a **precommited** message
-
-        # TODO: создать объект, обрабатывающий данную порцию разговора
-        self._request_id = str(uuid.uuid4().hex)[:8]
-
-        cprint(f"  {text} ", "cyan", attrs=["reverse"])
-
-        self.chat.append(text=text, role="user")
-
+        self.unhandled_text += " " + message["payload"]["text"]
         await self.emit("tts_abort", {})
-        await self.emit("llm_request", self.chat.messages)
 
     async def _handle_llm_response(self, message):
         """

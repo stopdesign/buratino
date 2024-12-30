@@ -15,10 +15,12 @@ logger.setLevel(logging.INFO)
 
 
 class VADInfoTrack(AudioStreamTrack):
-    def __init__(self, track, vad_model, callback):
+    def __init__(self, track, vad_model, on_chunk, on_start, on_end):
         super().__init__()
         self.track = track
-        self.callback = callback
+        self.on_chunk = on_chunk
+        self.on_start = on_start
+        self.on_end = on_end
 
         self.vad_model = vad_model
 
@@ -52,8 +54,7 @@ class VADInfoTrack(AudioStreamTrack):
             chunk = self.buffer[: self.chunk_size]
             speech_prob = self.vad_model(chunk, self.sampling_rate).item()
             self.buffer = self.buffer[self.chunk_size :]
-
-            await self.callback(speech_prob)
+            await self.on_chunk(speech_prob)
 
         is_speech = speech_prob >= 0.4
 
@@ -62,21 +63,21 @@ class VADInfoTrack(AudioStreamTrack):
             self.is_activated_amount += 1
             if self.is_activated_amount >= self.is_activated_threshhold and not self.is_activated:
                 self.is_activated = True
-                logger.info("VAD activated")
                 self.segments = []
+                await self.on_start()
 
         self.segments.append(int(is_speech))
         self.segments = self.segments[-self.segments_amount :]
 
-        # last 80 segments was no speach
+        # last 80 segments was no speech
         if (
             mean(self.segments) <= 0.4
             and self.is_activated
             and len(self.segments) >= self.segments_amount
         ):
-            logger.info("Let's Speech to text!")
             self.is_activated_amount = 0
             self.is_activated = False
             self.segments = []
+            await self.on_end()
 
         return frame

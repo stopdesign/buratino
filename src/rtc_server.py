@@ -112,9 +112,6 @@ async def offer(request):
         if track.kind != "audio":
             return
 
-        # TODO: попробовать один канал отправлять туда и сюда (можно resampled)
-        # например, stt можно подписать на трек, который возвращает VAD
-
         proxy_track = relay.subscribe(track)
         vad_track = vad.create_track(proxy_track)
         recorder.addTrack(vad_track)
