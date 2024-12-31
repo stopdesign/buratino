@@ -55,6 +55,34 @@ function createPeerConnection() {
         document.getElementById("audio").srcObject = evt.streams[0];
     });
 
+    pc.addEventListener(
+        "connectionstatechange",
+        () => {
+            switch (pc.connectionState) {
+                case "new":
+                case "connecting":
+                    console.info("Connecting…");
+                    break;
+                case "connected":
+                    console.info("Online");
+                    break;
+                case "disconnected":
+                    console.info("Disconnecting…");
+                    break;
+                case "closed":
+                    console.info("Offline");
+                    break;
+                case "failed":
+                    console.info("Error");
+                    break;
+                default:
+                    console.info("Unknown");
+                    break;
+            }
+        },
+        false,
+    );
+
     return pc;
 }
 
@@ -166,13 +194,32 @@ function start() {
         dc.addEventListener("close", () => {
             clearInterval(dcInterval);
             dataChannelLog.textContent += "- close\n";
+
+            reset_btns();
+
+            // close local audio
+            pc.getSenders().forEach((sender) => {
+                if (sender.track) {
+                    sender.track.stop();
+                }
+            });
+
+            dc.close();
+            pc.close();
+
+            setTimeout(() => {
+                pc.dispatchEvent(new Event("connectionstatechange"));
+                pc.dispatchEvent(new Event("signalingstatechange"));
+                pc.dispatchEvent(new Event("iceconnectionstatechange"));
+            }, 100);
         });
         dc.addEventListener("open", () => {
             dataChannelLog.textContent += "- open\n";
             dcInterval = setInterval(() => {
-                var message = "ping " + current_stamp();
-                // dataChannelLog.textContent += "> " + message + "\n";
-                dc.send(message);
+                if (dc && dc.readyState == "open") {
+                    var message = "ping " + current_stamp();
+                    dc.send(message);
+                }
             }, 3000);
         });
         dc.addEventListener("message", (evt) => {
@@ -230,16 +277,20 @@ function start() {
         negotiate();
     }
 
-    document.getElementById("msg").disabled = false;
     document.getElementById("stop").disabled = false;
+    document.getElementById("msg").disabled = false;
+}
+
+function reset_btns() {
+    document.getElementById("start").disabled = false;
+    document.getElementById("stop").disabled = true;
+    document.getElementById("msg").disabled = true;
 }
 
 function stop() {
     // close data channel
     if (dc && dc.readyState == "open") {
-        document.getElementById("stop").disabled = true;
-        document.getElementById("msg").disabled = true;
-        document.getElementById("start").disabled = false;
+        reset_btns();
 
         // close transceivers
         if (pc.getTransceivers) {
@@ -261,9 +312,8 @@ function stop() {
 
         // close peer connection
         setTimeout(() => {
-            document.getElementById("start").disabled = false;
             pc.close();
-        }, 500);
+        }, 200);
     }
 }
 

@@ -88,9 +88,10 @@ async def offer(request):
     @pc.on("connectionstatechange")
     async def on_connectionstatechange():
         log_info("Connection state: %s" % str(pc.connectionState).upper())
-        if pc.connectionState == "failed":
-            await pc.close()
-            pcs.discard(pc)
+
+    @pc.on("signalingstatechange")
+    async def on_signalingstatechange():
+        log_info("Signaling state: %s" % str(pc.signalingState).upper())
 
     @pc.on("datachannel")
     async def on_datachannel(channel):
@@ -102,6 +103,9 @@ async def offer(request):
                 # Пинг и ответ на него
                 channel.send("pong" + message[4:])
             else:
+                stats = await pc.getStats()
+                print(json.dumps(stats, indent=2, default=str))
+
                 # Проброс всех других сообщений в EventBus
                 await event_bus.publish({"type": "rtc_message", "payload": message})
 
@@ -154,9 +158,8 @@ async def javascript(request):
 async def on_shutdown(app):
     # close peer connections
     coros = [pc.close() for pc in pcs]
-    await asyncio.gather(*coros)
+    await asyncio.gather(*coros, return_exceptions=True)
     pcs.clear()
-    print("\nDONE")
 
 
 if __name__ == "__main__":
@@ -180,3 +183,5 @@ if __name__ == "__main__":
 
     loop = asyncio.new_event_loop()
     web.run_app(app, access_log=None, host=args.host, port=args.port, loop=loop)
+
+    logger.info("EXIT\n")

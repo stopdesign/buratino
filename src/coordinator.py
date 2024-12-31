@@ -1,9 +1,11 @@
 import logging
+import os
 from time import monotonic
 
 from termcolor import cprint
 
 from chat import ChatContext
+from tools import ToolsHandler
 from workers.base import BaseWorker
 
 logger = logging.getLogger(__name__)
@@ -19,8 +21,8 @@ SP = (
     "imperfect and might misinterpret or autocorrect due to recognition errors or assumptions. "
     "7. Prioritize the context of the recognized sentence rather than detected "
     "spelling or grammar issues. "
-    "8. If the phrase seems short and imcomplete, return [INCOMPLETE]. "
-    "9. Ask When Uncertain. If unsure, ask clarifying questions like: 'Did you mean X?' "
+    # "8. If the phrase seems short and imcomplete, return [INCOMPLETE]. "
+    # "9. Ask When Uncertain. If unsure, ask clarifying questions like: 'Did you mean X?' "
     "IMPORTANT: always remember that you are a voice assistant with no visual interface. "
     "IMPORTANT: Avoid follow-up questions. Use laconic and concise language. "
 )
@@ -43,8 +45,13 @@ class Coordinator(BaseWorker):
             "on_vad_data",
             "on_vad_start",
             "on_vad_end",
+            "llm_tool_calls",
         ]
+
+        project_root = os.path.dirname(os.path.dirname(__file__))
+
         self.chat = ChatContext()
+        self.tools = ToolsHandler(self.chat, root_path=project_root)
         self.system_prompt = SP
 
         self.last_stt_time: float = -1.0
@@ -56,7 +63,7 @@ class Coordinator(BaseWorker):
 
     async def start(self):
         await super().start()
-        self.chat.append(role="system", text=self.system_prompt)
+        self.chat.append(role="system", content=self.system_prompt)
 
     async def handle_custom_message(self, message):
         match message["type"]:
@@ -72,6 +79,8 @@ class Coordinator(BaseWorker):
                 await self._handle_speech_final(message)
             case "llm_response":
                 await self._handle_llm_response(message)
+            case "llm_tool_calls":
+                await self._handle_llm_tool_calls(message)
             case "llm_response_done":
                 await self._handle_llm_response_done(message)
             case "abort_all":
@@ -104,11 +113,13 @@ class Coordinator(BaseWorker):
         if self.unhandled_text and self.silence_duration > 1.0:
             cprint(f"  {self.unhandled_text} ", "cyan", attrs=["reverse"])
 
-            self.chat.append(text=self.unhandled_text, role="user")
+            self.chat.append(content=self.unhandled_text, role="user")
             self.unhandled_text = ""
 
             await self.emit("tts_abort", {})
-            await self.emit("llm_request", self.chat.messages)
+
+            payload = {"chat_ctx": self.chat.context, "tools_ctx": self.tools.options}
+            await self.emit("llm_request", payload)
 
     async def _handle_speech_interim(self, message):
         text = message["payload"]["text"]
@@ -129,14 +140,33 @@ class Coordinator(BaseWorker):
         """
         Handle responses from the LLM worker.
         """
-        text = message.get("payload", {}).get("response", "--")
-
+        text = message.get("payload", "")
         cprint(f"  {text} ", "magenta", attrs=["reverse"])
 
-        self.chat.append(text=text, role="assistant")
+        self.chat.append(content=text, role="assistant")
 
         # Добавить текст в очередь на синтез и речь
         await self.emit("tts_request", {"text": text})
+
+    async def _handle_llm_tool_calls(self, message):
+        """ """
+        tool_calls = message.get("payload", {})
+        cprint(f"  {tool_calls} ", "yellow", attrs=["reverse"])
+
+        self.chat.append(tool_calls=tool_calls, role="assistant")
+
+        results = await self.tools.execute(tool_calls)
+
+        # Append the result of each call
+        for result in results:
+            cprint(f" 󰊕 {result} ", "blue", attrs=["reverse"])
+            self.chat.append(content=result["content"], tool_call_id=result["id"], role="tool")
+
+        await self.emit("tts_abort", {})
+
+        # Call the LLM again to process the function call results
+        payload = {"chat_ctx": self.chat.context}
+        await self.emit("llm_request", payload)
 
     async def _handle_llm_response_done(self, message):
         cprint(" LLM DONE ", attrs=["reverse"])

@@ -74,7 +74,8 @@ class STTWorker(BaseWorker):
         client_options = DeepgramClientOptions(
             options={"keepalive": "true"},
             api_key=DEEPGRAM_API_KEY,
-            verbose=logging.FATAL,  # logging.NOTSET,
+            verbose=logging.FATAL,
+            # verbose=logging.NOTSET,
         )
 
         self.deepgram = AsyncLiveClient(client_options)
@@ -94,9 +95,11 @@ class STTWorker(BaseWorker):
     async def stop(self):
         logger.error("Stopping STT...")
         await self.deepgram.finalize()
-        await asyncio.sleep(0.2)
+        logger.error("finalize done")
         await self.deepgram.finish()
+        logger.error("finish done")
         await super().stop()
+        logger.error("stop done")
 
     async def handle_custom_message(self, message):
         match message["type"]:

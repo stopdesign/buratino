@@ -11,3 +11,5 @@ class ChatMessage:
     role: ChatRole
     name: str | None = None
     content: ChatContent | list[ChatContent] | None = None
+    tool_calls: list | None = None
+    tool_call_id: str | None = None

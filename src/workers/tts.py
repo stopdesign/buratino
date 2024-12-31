@@ -41,7 +41,7 @@ class TTSWorker(BaseWorker):
 
     async def start(self) -> None:
         await super().start()
-        asyncio.create_task(self._process_tts_requests())
+        asyncio.create_task(self._process_tts_requests(), name="process_tts_requests")
 
     async def handle_custom_message(self, message):
         match message["type"]:
@@ -88,9 +88,12 @@ class TTSWorker(BaseWorker):
             response_format="opus",
         ) as response:
             oggProcessor = OggProcessor(self.on_segment)
+            logger.info(f"start chunks {request_id}")
             async for chunk in response.iter_bytes(chunk_size=4096):
                 logger.info(f"Received chunk for request {request_id}")
                 oggProcessor.addBuffer(chunk)
+            logger.info(f"end chunks {request_id}")
+        logger.info(f"end request {request_id}")
 
     def get_audio_packet(self):
         """
