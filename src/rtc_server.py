@@ -9,7 +9,6 @@ import coloredlogs
 from aiohttp import web
 from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaBlackhole, MediaRecorder, MediaRelay
-from silero_vad import load_silero_vad
 
 from coordinator import Coordinator
 from utils.event_bus import EventBus
@@ -18,8 +17,6 @@ from workers.llm import LLMWorker
 from workers.stt import STTWorker
 from workers.tts import TTSWorker
 from workers.vad import VADWorker
-
-vad_model = load_silero_vad(onnx=True)
 
 coloredlogs.install(
     "INFO",
@@ -42,10 +39,17 @@ ROOT = os.path.dirname(__file__)
 
 async def offer(request):
     params = await request.json()
+
+    # print(json.dumps(params, indent=2, default=str).replace("\\r\\n", "\n"))
+
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
 
-    ice_servers = ["stun:127.0.0.1:3478"]
-    configuration = RTCConfiguration(iceServers=[RTCIceServer(urls=ice_servers)])
+    ice_server = RTCIceServer(
+        urls="turn:turn.grrr.sh:5349",
+        username="python",
+        credential="huypythona",
+    )
+    configuration = RTCConfiguration(iceServers=[ice_server])
     pc = RTCPeerConnection(configuration)
     pcs.add(pc)
 
@@ -95,6 +99,8 @@ async def offer(request):
 
     @pc.on("datachannel")
     async def on_datachannel(channel):
+        coordinator.set_data_channel(channel)
+
         @channel.on("message")
         async def on_message(message):
             if not isinstance(message, str):
@@ -103,11 +109,11 @@ async def offer(request):
                 # Пинг и ответ на него
                 channel.send("pong" + message[4:])
             else:
-                stats = await pc.getStats()
-                print(json.dumps(stats, indent=2, default=str))
+                # stats = await pc.getStats()
+                # print(json.dumps(stats, indent=2, default=str))
 
                 # Проброс всех других сообщений в EventBus
-                await event_bus.publish({"type": "rtc_message", "payload": message})
+                event_bus.publish({"type": "rtc_message", "payload": message})
 
     @pc.on("track")
     def on_track(track):
@@ -131,7 +137,6 @@ async def offer(request):
             log_info("Track %s ended", track.kind)
             await stt.stop()
             await recorder.stop()
-            vad_model.reset_states()
 
     # handle offer
     await pc.setRemoteDescription(offer)

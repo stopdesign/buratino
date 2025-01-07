@@ -16,6 +16,10 @@ class EventBus:
         self._skip_info = [
             "on_vad_data",
             "audio_chunk",
+            "tts_abort",
+            "llm_abort",
+            "on_speech_interim",
+            "on_speech_final",
         ]
         self.event_queue = asyncio.Queue()
         self.consumers = defaultdict(list)
@@ -31,9 +35,11 @@ class EventBus:
             subs_str = ", ".join(re.search(r"<(\S+) ", str(s.__self__)).group(1) for s in subs)
             print(f"  {msg}: {subs_str}")
 
-    async def publish(self, message):
-        mt = message.get("type", "*")
-        await self.event_queue.put((mt, message))
+    def publish(self, message):
+        try:
+            self.event_queue.put_nowait((message.get("type", "*"), message))
+        except Exception as e:
+            logger.exception(e)
 
     async def _process_events(self) -> None:
         while self.running:

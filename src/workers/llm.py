@@ -19,13 +19,12 @@ class LLMWorker(BaseWorker):
         self.current_task = None
         self.client = AsyncOpenAI(api_key=OPENAI_API_KEY)
         self.event_types = ["llm_request", "llm_abort"]
-        self.sentence_delimiter = (".", "!", "?", "\n", "\t", "-", ":", ";")
+        self.sentence_delimiter = (".", "!", "?", "\n", "\t", ";")
 
     async def handle_custom_message(self, message):
         match message.get("type"):
             case "llm_request":
-                if self.current_task:
-                    await self.handle_abort()
+                self.handle_abort()
 
                 chat_ctx = message["payload"].get("chat_ctx")
                 tools_ctx = message["payload"].get("tools_ctx")
@@ -34,16 +33,14 @@ class LLMWorker(BaseWorker):
                 self.current_task = asyncio.create_task(task_coro)
 
             case "llm_abort":
-                await self.handle_abort()
+                self.handle_abort()
 
     async def make_llm_call(self, chat_ctx, tools_ctx=None):
-        await self.emit("llm_started", {})
-
         params = dict(
             model=MODEL,
             messages=chat_ctx,
             temperature=0.8,
-            top_p=0.5,
+            top_p=0.6,
             stream=True,
         )
         if tools_ctx:
@@ -58,21 +55,23 @@ class LLMWorker(BaseWorker):
 
             async for part in self._group_chunks(result):
                 if "text" in part:
-                    await self.emit("llm_response", part["text"])
+                    self.emit("llm_response", part)
 
                 if "tool_calls" in part:
-                    await self.emit("llm_tool_calls", part["tool_calls"])
+                    self.emit("llm_tool_calls", part)
 
         except asyncio.CancelledError:
             logger.error("LLM request was aborted")
 
         finally:
+            old_task = self.current_task
             self.current_task = None
-            await self.emit("llm_response_done", {})
+            self.emit("llm_response_done", {"task": old_task})
 
     async def _group_chunks(self, completion):
         buffer = ""
         tool_calls = {}
+        first = True
 
         async for chunk in completion:
             delta = chunk.choices[0].delta
@@ -81,7 +80,10 @@ class LLMWorker(BaseWorker):
             # Process content chunks
             if delta.content is not None:
                 buffer += delta.content
-                if buffer.endswith(self.sentence_delimiter):
+                # Send the first chunk short(ly) to minimize latency
+                min_len = 50 if first else 150
+                if buffer.endswith(self.sentence_delimiter) and len(buffer) > min_len:
+                    first = False
                     yield {"text": buffer.strip()}
                     buffer = ""
 
@@ -112,8 +114,8 @@ class LLMWorker(BaseWorker):
         if buffer:
             yield {"text": buffer.strip()}
 
-    async def handle_abort(self):
-        if self.current_task:
-            print("ABORT LLM TASK")
+    def handle_abort(self):
+        if self.current_task and not self.current_task.done():
+            logger.error("Abort llm task")
             self.current_task.cancel()
             self.current_task = None

@@ -1,7 +1,11 @@
+import logging
 from dataclasses import asdict, dataclass, field
 from typing import Self
 
 from .message import ChatContent, ChatMessage, ChatRole
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 @dataclass
@@ -35,7 +39,16 @@ class ChatContext:
 
     @property
     def context(self):
-        return [asdict(m) for m in self.messages]
+        return [asdict(m) for m in self.messages if not m.interrupted_early]
+
+    def interrupt(self, turn: int, time: float) -> None:
+        """
+        Marks the last agent message as interrupted, saves time played (ms);
+        """
+        for message in self.messages[-5:]:
+            if message.turn == turn:
+                message.interruption_time = int(time * 1000)  # convert to ms
+                logger.error("INTERRUPTED:", message)
 
     # def copy(self) -> Self:
     #     copied_chat_ctx = ChatContext(messages=[m.copy() for m in self.messages])

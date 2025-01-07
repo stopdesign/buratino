@@ -41,8 +41,6 @@ class EventTracer(BaseWorker):
             #     await self._handle_llm_response(message)
             # case "llm_response_done":
             #     await self._handle_llm_response_done(message)
-            case "abort_all":
-                pass
 
     async def trace_event(self, name, phase="I", args=None):
         """Handle and record an incoming event."""

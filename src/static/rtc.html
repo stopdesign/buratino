@@ -66,13 +66,18 @@
                 background: #dddddd;
                 user-select: text;
             }
+
+            #status {
+                position: absolute;
+                top: 1em;
+                right: 2em;
+            }
         </style>
     </head>
     <body>
         <h2>Options</h2>
 
         <div class="option">
-            <input id="use-datachannel" checked="checked" type="checkbox" />
             <label for="use-datachannel">Use datachannel</label>
             <select id="datachannel-parameters">
                 <option value='{"ordered": true}'>Ordered, reliable</option>
@@ -86,7 +91,6 @@
         </div>
 
         <div class="option">
-            <input id="use-audio" checked="checked" type="checkbox" />
             <label for="use-audio">Use audio</label>
             <select id="audio-input">
                 <option value="" selected>Default device</option>
@@ -102,9 +106,13 @@
         <br />
         <button id="start" onclick="start()">Start</button>
         <button id="stop" onclick="stop()">Stop</button>
-        <button id="msg" onclick="msg()">MSG</button>
+        <button onclick="f1()">F1</button>
+        <button onclick="f2()">F2</button>
+        <button onclick="f3()">F3</button>
+        <button onclick="f4()">F4 (mute)</button>
 
         <h2>State</h2>
+        <p id="status">--</p>
 
         <p>ICE gathering state: <span id="ice-gathering-state"></span></p>
         <p>ICE connection state: <span id="ice-connection-state"></span></p>

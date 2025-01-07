@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -36,7 +37,22 @@ class ToolsHandler:
             "type": "function",
             "function": {
                 "name": "load_context",
-                "description": "Call this function when user asks to load context",
+                "description": "Call this function when user asks to load context.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_local_date_time",
+                "description": """Call this function when user asks date or time.
+                Call it even it was called right before (because the time have changed).
+                It is 24-hour notation, use it to read the time.
+                """,
                 "parameters": {
                     "type": "object",
                     "properties": {},
@@ -49,13 +65,14 @@ class ToolsHandler:
     def __init__(self, chat_ctx, root_path):
         self.chat = chat_ctx
         self.root_path = root_path
+        self.function_names = [t["function"]["name"] for t in self.tools]
 
     @property
     def options(self) -> list[dict]:
         return self.tools
 
     async def call(self, function_name: str, arguments: dict):
-        if function_name in ["get_current_weather", "load_context"]:
+        if function_name in self.function_names:
             if func := getattr(self, "tool_" + function_name):
                 # FIXME: create_task?
                 result = await func(arguments)
@@ -85,11 +102,14 @@ class ToolsHandler:
 
         return tool_calls
 
+    async def tool_get_local_date_time(self, arguments):
+        date = datetime.now().strftime("%Y-%m-%d")
+        time = datetime.now().strftime("%H:%M:%S")
+        res = f"The date is {date}, the local time is {time}"
+        return res
+
     async def tool_load_context(self, arguments):
-        print()
-        logger.error("HERE, load context")
-        path = os.path.join(self.root_path, "context/day_1.txt")
+        path = os.path.join(self.root_path, "context/day_3.txt")
         with open(path) as f:
             text = f.read()
-            print(f"text len: {len(text)}")
             return text

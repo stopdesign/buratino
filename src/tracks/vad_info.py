@@ -31,7 +31,7 @@ class VADInfoTrack(AudioStreamTrack):
         self.buffer = torch.tensor([], dtype=torch.float32)
 
         self.segments = []
-        self.segments_amount = 80
+        self.segments_amount = 20
 
         self.is_activated = False
         self.is_activated_threshhold = 5  # how many samples needed for activation
@@ -54,9 +54,12 @@ class VADInfoTrack(AudioStreamTrack):
             chunk = self.buffer[: self.chunk_size]
             speech_prob = self.vad_model(chunk, self.sampling_rate).item()
             self.buffer = self.buffer[self.chunk_size :]
-            await self.on_chunk(speech_prob)
+            self.on_chunk(speech_prob)
+        else:
+            # not enough data in buffer
+            return frame
 
-        is_speech = speech_prob >= 0.4
+        is_speech = speech_prob >= 0.2
 
         if is_speech:
             # print(f"Speech_prob={speech_prob:0.03f}")
@@ -64,20 +67,18 @@ class VADInfoTrack(AudioStreamTrack):
             if self.is_activated_amount >= self.is_activated_threshhold and not self.is_activated:
                 self.is_activated = True
                 self.segments = []
-                await self.on_start()
+                self.on_start()
 
         self.segments.append(int(is_speech))
         self.segments = self.segments[-self.segments_amount :]
 
-        # last 80 segments was no speech
-        if (
-            mean(self.segments) <= 0.4
-            and self.is_activated
-            and len(self.segments) >= self.segments_amount
-        ):
+        speech_ratio = mean(self.segments)
+
+        # last N segments was no speech
+        if self.is_activated and speech_ratio <= 0.1 and len(self.segments) >= self.segments_amount:
             self.is_activated_amount = 0
             self.is_activated = False
             self.segments = []
-            await self.on_end()
+            self.on_end()
 
         return frame

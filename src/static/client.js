@@ -2,22 +2,33 @@
 var dataChannelLog = document.getElementById("data-channel"),
     iceConnectionLog = document.getElementById("ice-connection-state"),
     iceGatheringLog = document.getElementById("ice-gathering-state"),
-    signalingLog = document.getElementById("signaling-state");
+    signalingLog = document.getElementById("signaling-state"),
+    statusElement = document.getElementById("status");
+
+var audio = document.getElementById("audio");
+audio.volume = 1;
 
 // peer connection
 var pc = null;
+
+var reconnect = null;
 
 // data channel
 var dc = null,
     dcInterval = null;
 
-document.getElementById("msg").disabled = true;
 document.getElementById("stop").disabled = true;
 
 function createPeerConnection() {
     var config = {
         sdpSemantics: "unified-plan",
-        iceServers: [{ urls: "stun:127.0.0.1:3478" }],
+        iceServers: [
+            {
+                urls: "turns:turn.grrr.sh:5349",
+                username: "tester1",
+                credential: "flash1",
+            },
+        ],
     };
 
     pc = new RTCPeerConnection(config);
@@ -52,12 +63,27 @@ function createPeerConnection() {
 
     // connect audio
     pc.addEventListener("track", (evt) => {
-        document.getElementById("audio").srcObject = evt.streams[0];
+        audio.srcObject = evt.streams[0];
     });
+
+    pc.onicecandidateerror = (event) => {
+        console.error("ICE Candidate Error:", event.errorText);
+    };
+
+    pc.onicecandidate = (event) => {
+        if (event.candidate) {
+            if (event.candidate.candidate) {
+                console.log(event.candidate.candidate);
+            } else {
+                console.log(event.candidate);
+            }
+        }
+    };
 
     pc.addEventListener(
         "connectionstatechange",
         () => {
+            statusElement.innerHTML = pc.connectionState;
             switch (pc.connectionState) {
                 case "new":
                 case "connecting":
@@ -107,7 +133,7 @@ function enumerateInputDevices() {
             );
         })
         .catch((e) => {
-            alert(e);
+            console.error(e);
         });
 }
 
@@ -117,7 +143,7 @@ function negotiate() {
         .then((offer) => {
             return pc.setLocalDescription(offer);
         })
-        .then(() => {
+        .then((a) => {
             // wait for ICE gathering to complete
             return new Promise((resolve) => {
                 if (pc.iceGatheringState === "complete") {
@@ -165,11 +191,34 @@ function negotiate() {
             return pc.setRemoteDescription(answer);
         })
         .catch((e) => {
-            alert(e);
+            console.error(e);
         });
 }
 
+function get_dt() {
+    var tzoffset = new Date().getTimezoneOffset() * 60000;
+    var dt = new Date(Date.now() - tzoffset).toISOString().slice(11, 23);
+    return dt;
+}
+
 function start() {
+    reconnect = true;
+    connect();
+}
+
+function connect() {
+    (async () => {
+        const isUp = await isHostUp(window.location.href);
+        console.log("host is up?", isUp);
+        if (isUp) {
+            _connect();
+        } else {
+            statusElement.innerHTML = "host is down";
+        }
+    })();
+}
+
+function _connect() {
     document.getElementById("start").disabled = true;
 
     pc = createPeerConnection();
@@ -185,54 +234,62 @@ function start() {
         }
     };
 
-    if (document.getElementById("use-datachannel").checked) {
-        var parameters = JSON.parse(
-            document.getElementById("datachannel-parameters").value,
-        );
+    var parameters = JSON.parse(
+        document.getElementById("datachannel-parameters").value,
+    );
 
-        dc = pc.createDataChannel("chat", parameters);
-        dc.addEventListener("close", () => {
-            clearInterval(dcInterval);
-            dataChannelLog.textContent += "- close\n";
+    dc = pc.createDataChannel("chat", parameters);
+    dc.addEventListener("close", () => {
+        clearInterval(dcInterval);
+        dataChannelLog.textContent += `${get_dt()} close\n`;
 
-            reset_btns();
+        reset_btns();
 
-            // close local audio
-            pc.getSenders().forEach((sender) => {
-                if (sender.track) {
-                    sender.track.stop();
-                }
-            });
-
-            dc.close();
-            pc.close();
-
-            setTimeout(() => {
-                pc.dispatchEvent(new Event("connectionstatechange"));
-                pc.dispatchEvent(new Event("signalingstatechange"));
-                pc.dispatchEvent(new Event("iceconnectionstatechange"));
-            }, 100);
-        });
-        dc.addEventListener("open", () => {
-            dataChannelLog.textContent += "- open\n";
-            dcInterval = setInterval(() => {
-                if (dc && dc.readyState == "open") {
-                    var message = "ping " + current_stamp();
-                    dc.send(message);
-                }
-            }, 3000);
-        });
-        dc.addEventListener("message", (evt) => {
-            if (evt.data.substring(0, 4) === "pong") {
-                var elapsed_ms =
-                    current_stamp() - parseInt(evt.data.substring(5), 10);
-                dataChannelLog.textContent += "ping " + elapsed_ms + " ms\n";
-            } else {
-                dataChannelLog.textContent += "< " + evt.data + "\n";
+        // close local audio
+        pc.getSenders().forEach((sender) => {
+            if (sender.track) {
+                sender.track.stop();
             }
-            dataChannelLog.scrollTop = 10000000;
         });
-    }
+
+        dc.close();
+        pc.close();
+
+        setTimeout(() => {
+            pc.dispatchEvent(new Event("connectionstatechange"));
+            pc.dispatchEvent(new Event("signalingstatechange"));
+            pc.dispatchEvent(new Event("iceconnectionstatechange"));
+        }, 100);
+    });
+    dc.addEventListener("open", () => {
+        reconnect = true;
+        dataChannelLog.textContent += `${get_dt()} open\n`;
+        dcInterval = setInterval(() => {
+            if (dc && dc.readyState == "open") {
+                var message = "ping " + current_stamp();
+                dc.send(message);
+            }
+        }, 5000);
+    });
+
+    //////////////////////////////////////
+    // DATA CHANNEL MESSAGE
+    // ///////////////////////////////////
+    dc.addEventListener("message", (evt) => {
+        if (evt.data.substring(0, 4) === "pong") {
+            // var elapsed_ms = current_stamp() - parseInt(evt.data.substring(5), 10);
+            // dataChannelLog.textContent += "ping " + elapsed_ms + " ms\n";
+        } else {
+            dataChannelLog.textContent += `${get_dt()} << ${evt.data}\n`;
+
+            if (evt.date == "abort") {
+                console.log("start fadeOut");
+                window.fadeOut();
+                setTimeout(() => (audio.volume = 1), 1000);
+            }
+        }
+        dataChannelLog.scrollTop = 10000000;
+    });
 
     // Build media constraints.
 
@@ -240,54 +297,50 @@ function start() {
         audio: {
             // sampleSize: 16,
             // channelCount: 2,
+            // sampleRate: 48000,
             echoCancellation: true,
             noiseSuppression: false,
             autoGainControl: false,
+            suppressLocalAudioPlayback: false,
+            voiceIsolation: false,
+            volume: 1.0,
         },
     };
 
-    if (document.getElementById("use-audio").checked) {
-        const audioConstraints = {};
+    const audioConstraints = {};
 
-        const device = document.getElementById("audio-input").value;
-        if (device) {
-            audioConstraints.deviceId = { exact: device };
-        }
-
-        constraints.audio = Object.keys(audioConstraints).length
-            ? audioConstraints
-            : true;
+    const device = document.getElementById("audio-input").value;
+    if (device) {
+        audioConstraints.deviceId = { exact: device };
     }
 
-    // Acquire media and start negociation.
+    console.log("CONSTRAINTS", constraints);
 
-    if (constraints.audio) {
-        navigator.mediaDevices.getUserMedia(constraints).then(
-            (stream) => {
-                stream.getTracks().forEach((track) => {
-                    pc.addTrack(track, stream);
-                });
-                return negotiate();
-            },
-            (err) => {
-                alert("Could not acquire media: " + err);
-            },
-        );
-    } else {
-        negotiate();
-    }
+    // Acquire media and start negotiation.
+    navigator.mediaDevices.getUserMedia(constraints).then(
+        (stream) => {
+            stream.getTracks().forEach((track) => {
+                pc.addTrack(track, stream);
+            });
+            console.info("NEGOTIATE");
+            return negotiate();
+        },
+        (err) => {
+            alert("Could not acquire media: " + err);
+        },
+    );
 
     document.getElementById("stop").disabled = false;
-    document.getElementById("msg").disabled = false;
 }
 
 function reset_btns() {
     document.getElementById("start").disabled = false;
     document.getElementById("stop").disabled = true;
-    document.getElementById("msg").disabled = true;
 }
 
 function stop() {
+    reconnect = false;
+
     // close data channel
     if (dc && dc.readyState == "open") {
         reset_btns();
@@ -317,11 +370,67 @@ function stop() {
     }
 }
 
-function msg() {
+setInterval(() => {
+    console.log("check host connection");
+    if (reconnect !== true) return;
+    if (
+        !pc ||
+        (pc &&
+            (pc.connectionState == "failed" ||
+                pc.connectionState == "closed" ||
+                pc.connectionState == "new"))
+    ) {
+        console.log("reconnect...");
+        try {
+            connect();
+        } catch (error) {
+            console.error(error);
+        }
+    }
+}, 3000);
+
+function f1() {
     if (dc && dc.readyState == "open") {
-        dataChannelLog.textContent += "cmd: save_audio\n";
+        dataChannelLog.textContent += `${get_dt()} f1: save audio\n`;
         dc.send("save_audio");
     }
+}
+function f2() {
+    if (dc && dc.readyState == "open") {
+        dataChannelLog.textContent += `${get_dt()} f2: time test\n`;
+        dc.send("time_test");
+    }
+}
+function f3() {
+    if (dc && dc.readyState == "open") {
+        dataChannelLog.textContent += `${get_dt()} f3: custom\n`;
+        dc.send("f3");
+    }
+}
+
+// Function to fade out the audio volume
+window.fadeOut = function fadeOut(duration = 0.8) {
+    const steps = 10;
+    const interval = duration / steps;
+
+    let currentVolume = 1;
+
+    const fadeInterval = setInterval(() => {
+        if (currentVolume > 0) {
+            currentVolume -= 0.9 / steps;
+            audio.volume = Math.max(currentVolume, 0);
+        } else {
+            clearInterval(fadeInterval);
+            console.log("fadeOut DONE");
+        }
+    }, interval * 1000);
+};
+
+function f4() {
+    dataChannelLog.textContent += `${get_dt()} f4: custom\n`;
+    dc.send("f4");
+
+    window.fadeOut();
 }
 
 function sdpFilterCodec(kind, codec, realSdp) {
@@ -380,6 +489,25 @@ function sdpFilterCodec(kind, codec, realSdp) {
 
 function escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // $& means the whole matched string
+}
+
+async function isHostUp(url, timeout = 300) {
+    const controller = new AbortController();
+    const signal = controller.signal;
+
+    // Set a timeout to abort the fetch request
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+        const response = await fetch(url, { method: "HEAD", signal });
+        clearTimeout(timeoutId); // Clear the timeout if the request succeeds
+        return response.ok; // Returns true if the response is OK (status 200-299)
+    } catch (error) {
+        if (error.name === "AbortError") {
+            console.error("Request timed out");
+        }
+        return false;
+    }
 }
 
 enumerateInputDevices();
