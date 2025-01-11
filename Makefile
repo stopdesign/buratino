@@ -31,7 +31,7 @@ count: # Count code lines with cloc
 		--not-match-f='min.js|min.css|bootstrap|icons.css' \
 		--quiet
 
-.SILENT: run
+.SILENT: play
 play: # Play the last n-th audio log
 	@INDEX=$(or $(word 2, $(MAKECMDGOALS)), 1); \
 	FILE=$$(ls -1 "$(AUDIO_DIR)" | sort | tail -n $${INDEX} | head -n 1); \

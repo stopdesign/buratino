@@ -1,10 +1,31 @@
+import glob
 import json
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
+
+import requests
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+load_dotenv()
+
+
+def send_telegram(text: str):
+    channel_id = os.getenv("TELEGRAM_CHANNEL_ID")
+    token = os.getenv("TELEGRAM_TOKEN")
+    url = "https://api.telegram.org/bot"
+    url += token
+    method = url + "/sendMessage"
+
+    r = requests.post(method, data={"chat_id": channel_id, "text": text})
+
+    if r.status_code != 200:
+        print(r.text)
+        raise Exception("post_text error")
 
 
 class ToolsHandler:
@@ -36,12 +57,53 @@ class ToolsHandler:
         {
             "type": "function",
             "function": {
-                "name": "load_context",
-                "description": "Call this function when user asks to load context.",
+                "name": "list_all_files",
+                "description": """
+                This function returns names of all available files.
+                Files are stored in the context directory.
+                They could be refered as context files.
+                """,
                 "parameters": {
                     "type": "object",
                     "properties": {},
                     "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": """
+                This function reads a file with specific name and returns it content.
+                Use it if user asks to read (digest, absorb) a file.
+                """,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "File name without extention",
+                        },
+                    },
+                    "required": ["name"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "add_to_vocabulary",
+                "description": """Call this function to add a word or a phrase to the user's vocabulary.""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "word": {
+                            "type": "string",
+                            "description": "A word or a phrase to add to the vocabulary",
+                        },
+                    },
+                    "required": ["word"],
                 },
             },
         },
@@ -71,11 +133,12 @@ class ToolsHandler:
     def options(self) -> list[dict]:
         return self.tools
 
-    async def call(self, function_name: str, arguments: dict):
+    async def call(self, function_name: str, arguments: str):
         if function_name in self.function_names:
             if func := getattr(self, "tool_" + function_name):
                 # FIXME: create_task?
-                result = await func(arguments)
+                args_parsed = json.loads(arguments) if arguments else {}
+                result = await func(**args_parsed)
                 return result
 
     async def tool_get_current_weather(self, arguments):
@@ -102,14 +165,27 @@ class ToolsHandler:
 
         return tool_calls
 
-    async def tool_get_local_date_time(self, arguments):
+    async def tool_get_local_date_time(self, *args, **kwargs):
         date = datetime.now().strftime("%Y-%m-%d")
         time = datetime.now().strftime("%H:%M:%S")
         res = f"The date is {date}, the local time is {time}"
         return res
 
-    async def tool_load_context(self, arguments):
-        path = os.path.join(self.root_path, "context/day_3.txt")
+    async def tool_list_all_files(self, *args, **kwargs):
+        path = os.path.join(self.root_path, "context", "*.txt")
+        files = []
+        for name in glob.iglob(path):
+            files.append(os.path.splitext(os.path.basename(name))[0])
+        files.sort()
+        return "\n".join(files)
+
+    async def tool_read_file(self, name: str, **kwargs):
+        path = os.path.join(self.root_path, "context", f"{name}.txt")
+        if not os.path.isfile(path):
+            return f"Error: file '{name}' not found"
         with open(path) as f:
-            text = f.read()
-            return text
+            return f.read()
+
+    async def tool_add_to_vocabulary(self, word):
+        send_telegram(f"vocabulary: {word}")
+        return "It is done."
