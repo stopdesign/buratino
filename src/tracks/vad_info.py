@@ -40,7 +40,7 @@ class VADInfoTrack(AudioStreamTrack):
     async def recv(self) -> AudioFrame:
         frame: AudioFrame = await self.track.recv()
 
-        # Resample to 16k
+        # Resample to 16_000 fps
         frame_16 = self.resampler.resample(frame)[0]
         # Convert to float32
         frame_array = torch.tensor(frame_16.to_ndarray()[0], dtype=torch.float32) / 32_767
@@ -56,7 +56,7 @@ class VADInfoTrack(AudioStreamTrack):
             self.buffer = self.buffer[self.chunk_size :]
             self.on_chunk(speech_prob)
         else:
-            # not enough data in buffer
+            # not enough data for VAD
             return frame
 
         is_speech = speech_prob >= 0.2

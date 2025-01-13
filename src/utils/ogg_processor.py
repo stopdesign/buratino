@@ -21,6 +21,10 @@ class OggProcessor:
         sampleRate *= 2  # Not sure why we need this...
         magic = magic.decode("utf-8")
 
+        # Meta information from OpenAI API
+        # {'magic': 'OpusHead', 'version': 1, 'channelCount': 1, 'sampleRate': 24000}
+        print(magic, version, channelCount, preSkip, sampleRate, gain, channelMapping)
+
         self.meta = {
             "magic": magic,
             "version": version,
